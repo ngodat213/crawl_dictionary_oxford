@@ -2,6 +2,12 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import re
+import time
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class DictionaryScraper:
     def __init__(self):
@@ -9,6 +15,9 @@ class DictionaryScraper:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        self.crawled_words = set()
+        self.vocabulary_limit = int(os.getenv('VOCABULARY_LIMIT', 50))
+        self.sleep_time = float(os.getenv('REQUEST_SLEEP_TIME', 1))
 
     def clean_text(self, text):
         if not text:
@@ -87,6 +96,36 @@ class DictionaryScraper:
             print(f"Data saved to {filename}")
         else:
             print("No data to save")
+
+    def crawl_dictionary(self, start_word):
+        all_word_data = []
+        words_to_crawl = [start_word]
+        
+        while words_to_crawl and len(self.crawled_words) < self.vocabulary_limit:
+            current_word = words_to_crawl.pop(0)
+            
+            if current_word in self.crawled_words:
+                continue
+                
+            print(f"Crawling word: {current_word}")
+            word_data = self.extract_word_info(current_word)
+            
+            if word_data:
+                all_word_data.append(word_data)
+                self.crawled_words.add(current_word)
+                
+                try:
+                    response = requests.get(f"{self.base_url}{current_word}", headers=self.headers)
+                    soup = BeautifulSoup(response.text, 'lxml')
+                    related_words = self.extract_related_words(soup)
+                    words_to_crawl.extend([w for w in related_words if w not in self.crawled_words])
+                    
+                except requests.RequestException as e:
+                    print(f"Error fetching related words for '{current_word}': {str(e)}")
+                
+            time.sleep(self.sleep_time)
+            
+        return all_word_data
 
 def main():
     scraper = DictionaryScraper()
